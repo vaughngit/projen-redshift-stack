@@ -25,6 +25,11 @@
   resolved "https://registry.yarnpkg.com/@aws-cdk/asset-node-proxy-agent-v5/-/asset-node-proxy-agent-v5-2.0.38.tgz#6765bef55f95220c52decb4adba8f75c1817b0f7"
   integrity sha512-BBwAjORhuUkTGO3CxGS5Evcp5n20h9v06Sftn2R1DuSm8zIoUlPsNlI1HUk8XqYuoEI4aD7IKRQBLglv09ciJQ==
 
+"@aws-cdk/aws-redshift-alpha@^2.56.0-alpha.0":
+  version "2.56.0-alpha.0"
+  resolved "https://registry.yarnpkg.com/@aws-cdk/aws-redshift-alpha/-/aws-redshift-alpha-2.56.0-alpha.0.tgz#e5fcfa475e53d5e5bca4deae9e5a096dd7d99f09"
+  integrity sha512-t4NIcz68nFQdEF3dwT+l7falZVrwnMw0dMdk/w4naiJ6BV7YIlJWPMrxsv2s3DeXx6AYkOPu6K+5fgeL53LD+g==
+
 "@babel/code-frame@^7.0.0", "@babel/code-frame@^7.12.13", "@babel/code-frame@^7.18.6":
   version "7.18.6"
   resolved "https://registry.yarnpkg.com/@babel/code-frame/-/code-frame-7.18.6.tgz#3b25d38c89600baa2dcc219edfa88a74eb2c427a"
@@ -1310,7 +1315,7 @@ at-least-node@^1.0.0:
   resolved "https://registry.yarnpkg.com/at-least-node/-/at-least-node-1.0.0.tgz#602cd4b46e844ad4effc92a8011a3c46e0238dc2"
   integrity sha512-+q/t7Ekv1EDY2l6Gda6LLiX14rU9TV20Wa3ofeQmwPFZbOMo9DXrLbOjFaaclkXKWidIaopwAObQDqwWtGUjqg==
 
-aws-cdk-lib@^2.1.0:
+aws-cdk-lib@^2.56.0:
   version "2.56.0"
   resolved "https://registry.yarnpkg.com/aws-cdk-lib/-/aws-cdk-lib-2.56.0.tgz#cfd2182769c5d5b2fcbfc00dd5d1cb743395e9da"
   integrity sha512-WFcqPzqiVsRCDGWq+rW2RRKsqg6ijCsDGwPWZmRyTkWurHEFk6BUbU4peRaUw5xeSP/qH9WcL17Tt7CF5Z1UVg==
@@ -1328,7 +1333,7 @@ aws-cdk-lib@^2.1.0:
     semver "^7.3.8"
     yaml "1.10.2"
 
-aws-cdk@^2.1.0:
+aws-cdk@^2.56.0:
   version "2.56.0"
   resolved "https://registry.yarnpkg.com/aws-cdk/-/aws-cdk-2.56.0.tgz#f255f478e666681b09351bdac86fdcec4f66d31d"
   integrity sha512-UjzCnuW5uw10MrzlOqp/cc8dGfTw5Og9YpMWBlCrYA+kVSSS2ikc6aWnk0IM07RQLr9RTvAzXkT2IfVivY3baQ==
