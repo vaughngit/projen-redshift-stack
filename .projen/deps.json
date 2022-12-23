@@ -80,8 +80,16 @@
       "type": "build"
     },
     {
+      "name": "typedoc",
+      "type": "build"
+    },
+    {
       "name": "typescript",
       "type": "build"
+    },
+    {
+      "name": "@aws-cdk/aws-redshift-alpha",
+      "type": "runtime"
     },
     {
       "name": "aws-cdk-lib",

@@ -3,12 +3,12 @@ import { Construct } from 'constructs';
 //import { AwsTsRedshiftStack } from './aws-ts-redshift-stack';
 import { RedshiftServerlessStack } from './aws-ts-redshift-serverless-stack';
 
-const solution =  "RedShift"
-const environment = "dev"
-const costcenter = "12_1_12_9_20_8"
-const aws_region = 'us-east-2'
-const appName = "redshift"
-const desc = "Redshift Demo Stack"
+const solution = 'RedShift';
+const environment = 'dev';
+const costcenter = '12_1_12_9_20_8';
+const aws_region = 'us-east-2';
+const appName = 'redshift';
+const desc = 'Redshift Demo Stack';
 
 export class MyStack extends Stack {
   constructor(scope: Construct, id: string, props: StackProps = {}) {
@@ -21,7 +21,7 @@ export class MyStack extends Stack {
 // for development, use account/region from cdk cli
 const devEnv = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
-  region: aws_region || process.env.CDK_DEFAULT_REGION //process.env.CDK_DEFAULT_REGION,
+  region: aws_region || process.env.CDK_DEFAULT_REGION, //process.env.CDK_DEFAULT_REGION,
 };
 
 const app = new App();
@@ -32,9 +32,9 @@ const app = new App();
 new RedshiftServerlessStack(app, 'serverless', {
   env: devEnv,
   stackName: `${solution}-serverless-${appName}`,
-  redShiftMasterUsername: "awsuser",
-  rssnamespace: "demoworkspaces",
-  rssworkgroup: "rssworkshop",
+  redShiftMasterUsername: 'awsuser',
+  rssnamespace: 'demoworkspaces',
+  rssworkgroup: 'rssworkshop',
   appName,
   description: desc,
   solution,
@@ -43,10 +43,10 @@ new RedshiftServerlessStack(app, 'serverless', {
   tags: {
     solution,
     environment,
-    costcenter
+    costcenter,
   },
 });
-/* 
+/*
 new AwsTsRedshiftStack(app, 'AwsTsRedshiftStack', {
   env: {account, region},
   stackName: `${solution}-${appName}`,

@@ -9,6 +9,7 @@
     "deploy": "npx projen deploy",
     "destroy": "npx projen destroy",
     "diff": "npx projen diff",
+    "docgen": "npx projen docgen",
     "eject": "npx projen eject",
     "eslint": "npx projen eslint",
     "package": "npx projen package",
@@ -42,15 +43,20 @@
     "projen": "^0.65.71",
     "ts-jest": "^29.0.3",
     "ts-node": "^10.9.1",
+    "typedoc": "*",
     "typescript": "^4.9.4"
   },
   "dependencies": {
+    "@aws-cdk/aws-redshift-alpha": "^2.56.0-alpha.0",
     "aws-cdk-lib": "^2.56.0",
     "constructs": "^10.0.5"
   },
   "license": "Apache-2.0",
   "version": "0.0.0",
   "jest": {
+    "moduleNameMapper": {
+      "^aws-cdk-lib/.warnings.jsii.js$": "<rootDir>/node_modules/aws-cdk-lib/.warnings.jsii.js"
+    },
     "testMatch": [
       "<rootDir>/src/**/__tests__/**/*.ts?(x)",
       "<rootDir>/(test|src)/**/*(*.)@(spec|test).ts?(x)"

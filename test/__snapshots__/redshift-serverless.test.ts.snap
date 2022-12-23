@@ -1,0 +1,3825 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Snapshot 1`] = `
+{
+  "Description": "Redshift Demo Stack",
+  "Outputs": {
+    "NatGateways": {
+      "Value": "[object Object],[object Object]",
+    },
+    "ReShiftSqlWorkbenchRrl": {
+      "Description": "The RedShift SQL Workbench Url",
+      "Value": "https://us-east-2.console.aws.amazon.com/sqlworkbench/home?region=us-east-2#/client",
+    },
+    "VPCCIDR": {
+      "Export": {
+        "Name": "RedShift:VpcCIDR",
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "RedShiftVPC1B63FBB2",
+          "CidrBlock",
+        ],
+      },
+    },
+    "VPCId": {
+      "Export": {
+        "Name": "RedShift:dev:VPCID:us-east-2",
+      },
+      "Value": {
+        "Ref": "RedShiftVPC1B63FBB2",
+      },
+    },
+    "VPCPrivateSubnet1": {
+      "Export": {
+        "Name": "RedShift:PrivateSubnet1",
+      },
+      "Value": {
+        "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet1Subnet1090EC75",
+      },
+    },
+    "VPCPrivateSubnet1AZ": {
+      "Value": "dummy1a",
+    },
+    "VPCPrivateSubnet2": {
+      "Export": {
+        "Name": "RedShift:PrivateSubnet2",
+      },
+      "Value": {
+        "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet2SubnetFAD45A29",
+      },
+    },
+    "VPCPrivateSubnet2AZ": {
+      "Value": "dummy1b",
+    },
+    "VPCPrivateSubnet3": {
+      "Export": {
+        "Name": "RedShift:PrivateSubnet3",
+      },
+      "Value": {
+        "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet3SubnetE56739AC",
+      },
+    },
+    "VPCPrivateSubnet3AZ": {
+      "Value": "dummy1c",
+    },
+    "VpcSecurityGroup": {
+      "Export": {
+        "Name": "RedShift:EC2SecurityGroup",
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "EC2SGE6C4E25D",
+          "GroupId",
+        ],
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691": {
+      "DependsOn": [
+        "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36",
+        "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC",
+      ],
+      "Properties": {
+        "Code": {
+          "ZipFile": "import boto3  # type: ignore
+import json
+import logging
+import urllib.request
+
+s3 = boto3.client("s3")
+
+EVENTBRIDGE_CONFIGURATION = 'EventBridgeConfiguration'
+
+CONFIGURATION_TYPES = ["TopicConfigurations", "QueueConfigurations", "LambdaFunctionConfigurations"]
+
+def handler(event: dict, context):
+  response_status = "SUCCESS"
+  error_message = ""
+  try:
+    props = event["ResourceProperties"]
+    bucket = props["BucketName"]
+    notification_configuration = props["NotificationConfiguration"]
+    request_type = event["RequestType"]
+    managed = props.get('Managed', 'true').lower() == 'true'
+    stack_id = event['StackId']
+
+    if managed:
+      config = handle_managed(request_type, notification_configuration)
+    else:
+      config = handle_unmanaged(bucket, stack_id, request_type, notification_configuration)
+
+    put_bucket_notification_configuration(bucket, config)
+  except Exception as e:
+    logging.exception("Failed to put bucket notification configuration")
+    response_status = "FAILED"
+    error_message = f"Error: {str(e)}. "
+  finally:
+    submit_response(event, context, response_status, error_message)
+
+def handle_managed(request_type, notification_configuration):
+  if request_type == 'Delete':
+    return {}
+  return notification_configuration
+
+def handle_unmanaged(bucket, stack_id, request_type, notification_configuration):
+  external_notifications = find_external_notifications(bucket, stack_id)
+
+  if request_type == 'Delete':
+    return external_notifications
+
+  def with_id(notification):
+    notification['Id'] = f"{stack_id}-{hash(json.dumps(notification, sort_keys=True))}"
+    return notification
+
+  notifications = {}
+  for t in CONFIGURATION_TYPES:
+    external = external_notifications.get(t, [])
+    incoming = [with_id(n) for n in notification_configuration.get(t, [])]
+    notifications[t] = external + incoming
+
+  if EVENTBRIDGE_CONFIGURATION in notification_configuration:
+    notifications[EVENTBRIDGE_CONFIGURATION] = notification_configuration[EVENTBRIDGE_CONFIGURATION]
+  elif EVENTBRIDGE_CONFIGURATION in external_notifications:
+    notifications[EVENTBRIDGE_CONFIGURATION] = external_notifications[EVENTBRIDGE_CONFIGURATION]
+
+  return notifications
+
+def find_external_notifications(bucket, stack_id):
+  existing_notifications = get_bucket_notification_configuration(bucket)
+  external_notifications = {}
+  for t in CONFIGURATION_TYPES:
+    external_notifications[t] = [n for n in existing_notifications.get(t, []) if not n['Id'].startswith(f"{stack_id}-")]
+
+  if EVENTBRIDGE_CONFIGURATION in existing_notifications:
+    external_notifications[EVENTBRIDGE_CONFIGURATION] = existing_notifications[EVENTBRIDGE_CONFIGURATION]
+
+  return external_notifications
+
+def get_bucket_notification_configuration(bucket):
+  return s3.get_bucket_notification_configuration(Bucket=bucket)
+
+def put_bucket_notification_configuration(bucket, notification_configuration):
+  s3.put_bucket_notification_configuration(Bucket=bucket, NotificationConfiguration=notification_configuration)
+
+def submit_response(event: dict, context, response_status: str, error_message: str):
+  response_body = json.dumps(
+    {
+      "Status": response_status,
+      "Reason": f"{error_message}See the details in CloudWatch Log Stream: {context.log_stream_name}",
+      "PhysicalResourceId": event.get("PhysicalResourceId") or event["LogicalResourceId"],
+      "StackId": event["StackId"],
+      "RequestId": event["RequestId"],
+      "LogicalResourceId": event["LogicalResourceId"],
+      "NoEcho": False,
+    }
+  ).encode("utf-8")
+  headers = {"content-type": "", "content-length": str(len(response_body))}
+  try:
+    req = urllib.request.Request(url=event["ResponseURL"], headers=headers, data=response_body, method="PUT")
+    with urllib.request.urlopen(req) as response:
+      print(response.read().decode("utf-8"))
+    print("Status code: " + response.reason)
+  except Exception as e:
+      print("send(..) failed executing request.urlopen(..): " + str(e))
+",
+        },
+        "Description": "AWS CloudFormation handler for "Custom::S3BucketNotifications" resources (@aws-cdk/aws-s3)",
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC",
+            "Arn",
+          ],
+        },
+        "Runtime": "python3.9",
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "Timeout": 300,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:PutBucketNotification",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36",
+        "Roles": [
+          {
+            "Ref": "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F": {
+      "DependsOn": [
+        "CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-796072252262-us-east-2",
+          "S3Key": "3f51abb709b8e65167a45aeed02bab11540603d909005d7148230ba5ce6c74d7.zip",
+        },
+        "Description": {
+          "Fn::Join": [
+            "",
+            [
+              "Lambda function for auto-deleting objects in ",
+              {
+                "Ref": "RedshiftServerlssDataBucketFB84D1EA",
+              },
+              " S3 bucket.",
+            ],
+          ],
+        },
+        "Handler": "__entrypoint__.handler",
+        "MemorySize": 128,
+        "Role": {
+          "Fn::GetAtt": [
+            "CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs14.x",
+        "Timeout": 900,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Sub": "arn:\${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "EC2SGE6C4E25D": {
+      "Properties": {
+        "GroupDescription": "RedShift EC2 dev SecurityGroup",
+        "GroupName": "RedShift-EC2-dev-SG",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "RedShiftVPC1B63FBB2",
+                "CidrBlock",
+              ],
+            },
+            "Description": {
+              "Fn::Join": [
+                "",
+                [
+                  "from ",
+                  {
+                    "Fn::GetAtt": [
+                      "RedShiftVPC1B63FBB2",
+                      "CidrBlock",
+                    ],
+                  },
+                  ":443",
+                ],
+              ],
+            },
+            "FromPort": 443,
+            "IpProtocol": "tcp",
+            "ToPort": 443,
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "EC2SGfromserverlessEC2SGDCEDA6B2ALLTRAFFIC71A7A7CD": {
+      "Properties": {
+        "Description": "allow all east/west traffic inside security group",
+        "GroupId": {
+          "Fn::GetAtt": [
+            "EC2SGE6C4E25D",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "-1",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "EC2SGE6C4E25D",
+            "GroupId",
+          ],
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "RedShiftServerlessNamespace": {
+      "Properties": {
+        "AdminUserPassword": "Awsuser123",
+        "AdminUsername": "awsuser",
+        "DbName": "rssdb",
+        "DefaultIamRoleArn": {
+          "Fn::GetAtt": [
+            "redShiftServerlessRoleE3578E08",
+            "Arn",
+          ],
+        },
+        "FinalSnapshotName": "rssfinalSnapshotName",
+        "FinalSnapshotRetentionPeriod": 30,
+        "IamRoles": [
+          {
+            "Fn::GetAtt": [
+              "redShiftServerlessRoleE3578E08",
+              "Arn",
+            ],
+          },
+        ],
+        "NamespaceName": "demoworkspaces",
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+      },
+      "Type": "AWS::RedshiftServerless::Namespace",
+    },
+    "RedShiftVPC1B63FBB2": {
+      "Properties": {
+        "CidrBlock": "172.16.0.0/16",
+        "EnableDnsHostnames": true,
+        "EnableDnsSupport": true,
+        "InstanceTenancy": "default",
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "RedShift",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+      },
+      "Type": "AWS::EC2::VPC",
+    },
+    "RedShiftVPCCloudWatchEndpointFE742A57": {
+      "Properties": {
+        "PrivateDnsEnabled": true,
+        "SecurityGroupIds": [
+          {
+            "Fn::GetAtt": [
+              "EC2SGE6C4E25D",
+              "GroupId",
+            ],
+          },
+        ],
+        "ServiceName": "com.amazonaws.us-east-2.monitoring",
+        "SubnetIds": [
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet1Subnet1090EC75",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet2SubnetFAD45A29",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet3SubnetE56739AC",
+          },
+        ],
+        "VpcEndpointType": "Interface",
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::VPCEndpoint",
+    },
+    "RedShiftVPCCloudWatchEventsEndpoint45FCBF85": {
+      "Properties": {
+        "PrivateDnsEnabled": true,
+        "SecurityGroupIds": [
+          {
+            "Fn::GetAtt": [
+              "EC2SGE6C4E25D",
+              "GroupId",
+            ],
+          },
+        ],
+        "ServiceName": "com.amazonaws.us-east-2.events",
+        "SubnetIds": [
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet1Subnet1090EC75",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet2SubnetFAD45A29",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet3SubnetE56739AC",
+          },
+        ],
+        "VpcEndpointType": "Interface",
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::VPCEndpoint",
+    },
+    "RedShiftVPCCloudWatchLogsEndpoint5BF1273D": {
+      "Properties": {
+        "PrivateDnsEnabled": true,
+        "SecurityGroupIds": [
+          {
+            "Fn::GetAtt": [
+              "EC2SGE6C4E25D",
+              "GroupId",
+            ],
+          },
+        ],
+        "ServiceName": "com.amazonaws.us-east-2.logs",
+        "SubnetIds": [
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet1Subnet1090EC75",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet2SubnetFAD45A29",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet3SubnetE56739AC",
+          },
+        ],
+        "VpcEndpointType": "Interface",
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::VPCEndpoint",
+    },
+    "RedShiftVPCDynamoDbEndpoint8686A00F": {
+      "Properties": {
+        "RouteTableIds": [
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged1Subnet1RouteTable5B2D23C9",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged1Subnet2RouteTable0AFCB566",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged1Subnet3RouteTable239A66EC",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged2Subnet1RouteTable074E500D",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged2Subnet2RouteTable7AEDEC13",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged2Subnet3RouteTable70FC3896",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged3Subnet1RouteTable07404042",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged3Subnet2RouteTableA8089759",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged3Subnet3RouteTable169A1F18",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet1RouteTable5AA2BC55",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet2RouteTable045F2C6E",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet3RouteTable7A016007",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet1RouteTableD2BD1C96",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet2RouteTable7E602E17",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet3RouteTableF5B240A1",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet1RouteTable936EDF86",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet2RouteTable14FCE43E",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet3RouteTable3991DBFF",
+          },
+        ],
+        "ServiceName": {
+          "Fn::Join": [
+            "",
+            [
+              "com.amazonaws.",
+              {
+                "Ref": "AWS::Region",
+              },
+              ".dynamodb",
+            ],
+          ],
+        },
+        "VpcEndpointType": "Gateway",
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::VPCEndpoint",
+    },
+    "RedShiftVPCEFSEndpoint4FA12FB9": {
+      "Properties": {
+        "PrivateDnsEnabled": true,
+        "SecurityGroupIds": [
+          {
+            "Fn::GetAtt": [
+              "RedShiftVPCEFSEndpointSecurityGroup817C4FA1",
+              "GroupId",
+            ],
+          },
+        ],
+        "ServiceName": "com.amazonaws.us-east-2.elasticfilesystem",
+        "SubnetIds": [
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet1Subnet1090EC75",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet2SubnetFAD45A29",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet3SubnetE56739AC",
+          },
+        ],
+        "VpcEndpointType": "Interface",
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::VPCEndpoint",
+    },
+    "RedShiftVPCEFSEndpointSecurityGroup817C4FA1": {
+      "Properties": {
+        "GroupDescription": "serverless/RedShift-VPC/EFSEndpoint/SecurityGroup",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "RedShiftVPC1B63FBB2",
+                "CidrBlock",
+              ],
+            },
+            "Description": {
+              "Fn::Join": [
+                "",
+                [
+                  "from ",
+                  {
+                    "Fn::GetAtt": [
+                      "RedShiftVPC1B63FBB2",
+                      "CidrBlock",
+                    ],
+                  },
+                  ":443",
+                ],
+              ],
+            },
+            "FromPort": 443,
+            "IpProtocol": "tcp",
+            "ToPort": 443,
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "RedShift",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "RedShiftVPCEcrDockerEndpointE91B8F31": {
+      "Properties": {
+        "PrivateDnsEnabled": true,
+        "SecurityGroupIds": [
+          {
+            "Fn::GetAtt": [
+              "EC2SGE6C4E25D",
+              "GroupId",
+            ],
+          },
+        ],
+        "ServiceName": "com.amazonaws.us-east-2.ecr.dkr",
+        "SubnetIds": [
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet1Subnet1090EC75",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet2SubnetFAD45A29",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet3SubnetE56739AC",
+          },
+        ],
+        "VpcEndpointType": "Interface",
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::VPCEndpoint",
+    },
+    "RedShiftVPCIGW4D96D21C": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "RedShift",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+      },
+      "Type": "AWS::EC2::InternetGateway",
+    },
+    "RedShiftVPCNatRole6D9AE89F": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ec2.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "RedShift",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "RedShiftVPCNatSecurityGroup717DC8AE": {
+      "Properties": {
+        "GroupDescription": "Security Group for NAT instances",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "from 0.0.0.0/0:ALL TRAFFIC",
+            "IpProtocol": "-1",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "RedShift",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "RedShiftVPCRedShiftawsmanaged1Subnet1RouteTable5B2D23C9": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-1Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftawsmanaged1Subnet1RouteTableAssociation3C268982": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged1Subnet1RouteTable5B2D23C9",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged1Subnet1Subnet55AB8F00",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftawsmanaged1Subnet1Subnet55AB8F00": {
+      "Properties": {
+        "AvailabilityZone": "dummy1a",
+        "CidrBlock": "172.16.18.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-awsmanaged-1",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Isolated",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-1Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftawsmanaged1Subnet2RouteTable0AFCB566": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-1Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftawsmanaged1Subnet2RouteTableAssociation97C09923": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged1Subnet2RouteTable0AFCB566",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged1Subnet2SubnetA70CDB79",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftawsmanaged1Subnet2SubnetA70CDB79": {
+      "Properties": {
+        "AvailabilityZone": "dummy1b",
+        "CidrBlock": "172.16.19.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-awsmanaged-1",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Isolated",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-1Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftawsmanaged1Subnet3RouteTable239A66EC": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-1Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftawsmanaged1Subnet3RouteTableAssociation3695F725": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged1Subnet3RouteTable239A66EC",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged1Subnet3Subnet57CFADC0",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftawsmanaged1Subnet3Subnet57CFADC0": {
+      "Properties": {
+        "AvailabilityZone": "dummy1c",
+        "CidrBlock": "172.16.20.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-awsmanaged-1",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Isolated",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-1Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftawsmanaged2Subnet1RouteTable074E500D": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-2Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftawsmanaged2Subnet1RouteTableAssociation488262E0": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged2Subnet1RouteTable074E500D",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged2Subnet1Subnet8B67EB41",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftawsmanaged2Subnet1Subnet8B67EB41": {
+      "Properties": {
+        "AvailabilityZone": "dummy1a",
+        "CidrBlock": "172.16.21.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-awsmanaged-2",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Isolated",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-2Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftawsmanaged2Subnet2RouteTable7AEDEC13": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-2Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftawsmanaged2Subnet2RouteTableAssociation16364B54": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged2Subnet2RouteTable7AEDEC13",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged2Subnet2Subnet62EE3270",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftawsmanaged2Subnet2Subnet62EE3270": {
+      "Properties": {
+        "AvailabilityZone": "dummy1b",
+        "CidrBlock": "172.16.22.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-awsmanaged-2",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Isolated",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-2Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftawsmanaged2Subnet3RouteTable70FC3896": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-2Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftawsmanaged2Subnet3RouteTableAssociationA3A6EAE4": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged2Subnet3RouteTable70FC3896",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged2Subnet3Subnet789764A3",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftawsmanaged2Subnet3Subnet789764A3": {
+      "Properties": {
+        "AvailabilityZone": "dummy1c",
+        "CidrBlock": "172.16.23.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-awsmanaged-2",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Isolated",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-2Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftawsmanaged3Subnet1RouteTable07404042": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-3Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftawsmanaged3Subnet1RouteTableAssociationF1A755C8": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged3Subnet1RouteTable07404042",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged3Subnet1Subnet0EBF587F",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftawsmanaged3Subnet1Subnet0EBF587F": {
+      "Properties": {
+        "AvailabilityZone": "dummy1a",
+        "CidrBlock": "172.16.24.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-awsmanaged-3",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Isolated",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-3Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftawsmanaged3Subnet2RouteTableA8089759": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-3Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftawsmanaged3Subnet2RouteTableAssociation46B1BC41": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged3Subnet2RouteTableA8089759",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged3Subnet2Subnet93125D1D",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftawsmanaged3Subnet2Subnet93125D1D": {
+      "Properties": {
+        "AvailabilityZone": "dummy1b",
+        "CidrBlock": "172.16.25.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-awsmanaged-3",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Isolated",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-3Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftawsmanaged3Subnet3RouteTable169A1F18": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-3Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftawsmanaged3Subnet3RouteTableAssociationB97F984D": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged3Subnet3RouteTable169A1F18",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftawsmanaged3Subnet3SubnetF8949E99",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftawsmanaged3Subnet3SubnetF8949E99": {
+      "Properties": {
+        "AvailabilityZone": "dummy1c",
+        "CidrBlock": "172.16.26.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-awsmanaged-3",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Isolated",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-awsmanaged-3Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftingress1Subnet1DefaultRoute001FFEA4": {
+      "DependsOn": [
+        "RedShiftVPCVPCGWC74B7A5F",
+      ],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "RedShiftVPCIGW4D96D21C",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet1RouteTable5448623E",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftingress1Subnet1NatInstance45B895CF": {
+      "DependsOn": [
+        "RedShiftVPCNatRole6D9AE89F",
+      ],
+      "Properties": {
+        "AvailabilityZone": "dummy1a",
+        "IamInstanceProfile": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet1NatInstanceInstanceProfileEA30AE24",
+        },
+        "ImageId": "ami-1234",
+        "InstanceType": "t3.nano",
+        "SecurityGroupIds": [
+          {
+            "Fn::GetAtt": [
+              "RedShiftVPCNatSecurityGroup717DC8AE",
+              "GroupId",
+            ],
+          },
+        ],
+        "SourceDestCheck": false,
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet1SubnetD0924C75",
+        },
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-1Subnet1/NatInstance",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "UserData": {
+          "Fn::Base64": "#!/bin/bash",
+        },
+      },
+      "Type": "AWS::EC2::Instance",
+    },
+    "RedShiftVPCRedShiftingress1Subnet1NatInstanceInstanceProfileEA30AE24": {
+      "Properties": {
+        "Roles": [
+          {
+            "Ref": "RedShiftVPCNatRole6D9AE89F",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::InstanceProfile",
+    },
+    "RedShiftVPCRedShiftingress1Subnet1RouteTable5448623E": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-1Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftingress1Subnet1RouteTableAssociation2F972A86": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet1RouteTable5448623E",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet1SubnetD0924C75",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftingress1Subnet1SubnetD0924C75": {
+      "Properties": {
+        "AvailabilityZone": "dummy1a",
+        "CidrBlock": "172.16.0.0/24",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-ingress-1",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Public",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-1Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftingress1Subnet2DefaultRoute1226E885": {
+      "DependsOn": [
+        "RedShiftVPCVPCGWC74B7A5F",
+      ],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "RedShiftVPCIGW4D96D21C",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet2RouteTableCCA03856",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftingress1Subnet2NatInstance5B22371F": {
+      "DependsOn": [
+        "RedShiftVPCNatRole6D9AE89F",
+      ],
+      "Properties": {
+        "AvailabilityZone": "dummy1b",
+        "IamInstanceProfile": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet2NatInstanceInstanceProfileFF786280",
+        },
+        "ImageId": "ami-1234",
+        "InstanceType": "t3.nano",
+        "SecurityGroupIds": [
+          {
+            "Fn::GetAtt": [
+              "RedShiftVPCNatSecurityGroup717DC8AE",
+              "GroupId",
+            ],
+          },
+        ],
+        "SourceDestCheck": false,
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet2SubnetCA183DB1",
+        },
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-1Subnet2/NatInstance",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "UserData": {
+          "Fn::Base64": "#!/bin/bash",
+        },
+      },
+      "Type": "AWS::EC2::Instance",
+    },
+    "RedShiftVPCRedShiftingress1Subnet2NatInstanceInstanceProfileFF786280": {
+      "Properties": {
+        "Roles": [
+          {
+            "Ref": "RedShiftVPCNatRole6D9AE89F",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::InstanceProfile",
+    },
+    "RedShiftVPCRedShiftingress1Subnet2RouteTableAssociation776AEE13": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet2RouteTableCCA03856",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet2SubnetCA183DB1",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftingress1Subnet2RouteTableCCA03856": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-1Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftingress1Subnet2SubnetCA183DB1": {
+      "Properties": {
+        "AvailabilityZone": "dummy1b",
+        "CidrBlock": "172.16.1.0/24",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-ingress-1",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Public",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-1Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftingress1Subnet3DefaultRoute40B079BB": {
+      "DependsOn": [
+        "RedShiftVPCVPCGWC74B7A5F",
+      ],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "RedShiftVPCIGW4D96D21C",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet3RouteTable5B805AA7",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftingress1Subnet3RouteTable5B805AA7": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-1Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftingress1Subnet3RouteTableAssociation4C643413": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet3RouteTable5B805AA7",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet3Subnet0C31AA89",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftingress1Subnet3Subnet0C31AA89": {
+      "Properties": {
+        "AvailabilityZone": "dummy1c",
+        "CidrBlock": "172.16.2.0/24",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-ingress-1",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Public",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-1Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftingress2Subnet1DefaultRouteCC00F948": {
+      "DependsOn": [
+        "RedShiftVPCVPCGWC74B7A5F",
+      ],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "RedShiftVPCIGW4D96D21C",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress2Subnet1RouteTable84AFF357",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftingress2Subnet1RouteTable84AFF357": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-2Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftingress2Subnet1RouteTableAssociation3636CA70": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress2Subnet1RouteTable84AFF357",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftingress2Subnet1Subnet99B84887",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftingress2Subnet1Subnet99B84887": {
+      "Properties": {
+        "AvailabilityZone": "dummy1a",
+        "CidrBlock": "172.16.3.0/24",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-ingress-2",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Public",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-2Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftingress2Subnet2DefaultRouteAAD4CDCE": {
+      "DependsOn": [
+        "RedShiftVPCVPCGWC74B7A5F",
+      ],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "RedShiftVPCIGW4D96D21C",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress2Subnet2RouteTable841D6B28",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftingress2Subnet2RouteTable841D6B28": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-2Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftingress2Subnet2RouteTableAssociation2EA1CD4D": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress2Subnet2RouteTable841D6B28",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftingress2Subnet2Subnet30FC77B5",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftingress2Subnet2Subnet30FC77B5": {
+      "Properties": {
+        "AvailabilityZone": "dummy1b",
+        "CidrBlock": "172.16.4.0/24",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-ingress-2",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Public",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-2Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftingress2Subnet3DefaultRouteAA5613B3": {
+      "DependsOn": [
+        "RedShiftVPCVPCGWC74B7A5F",
+      ],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "RedShiftVPCIGW4D96D21C",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress2Subnet3RouteTable144751E6",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftingress2Subnet3RouteTable144751E6": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-2Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftingress2Subnet3RouteTableAssociation97F8B953": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress2Subnet3RouteTable144751E6",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftingress2Subnet3Subnet11A4DB9B",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftingress2Subnet3Subnet11A4DB9B": {
+      "Properties": {
+        "AvailabilityZone": "dummy1c",
+        "CidrBlock": "172.16.5.0/24",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-ingress-2",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Public",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-2Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftingress3Subnet1DefaultRoute19F608AE": {
+      "DependsOn": [
+        "RedShiftVPCVPCGWC74B7A5F",
+      ],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "RedShiftVPCIGW4D96D21C",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress3Subnet1RouteTableB38446D1",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftingress3Subnet1RouteTableAssociationEA21D285": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress3Subnet1RouteTableB38446D1",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftingress3Subnet1SubnetDB532BF4",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftingress3Subnet1RouteTableB38446D1": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-3Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftingress3Subnet1SubnetDB532BF4": {
+      "Properties": {
+        "AvailabilityZone": "dummy1a",
+        "CidrBlock": "172.16.6.0/24",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-ingress-3",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Public",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-3Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftingress3Subnet2DefaultRoute6181E09B": {
+      "DependsOn": [
+        "RedShiftVPCVPCGWC74B7A5F",
+      ],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "RedShiftVPCIGW4D96D21C",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress3Subnet2RouteTable75CC1179",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftingress3Subnet2RouteTable75CC1179": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-3Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftingress3Subnet2RouteTableAssociationF45FD96E": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress3Subnet2RouteTable75CC1179",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftingress3Subnet2Subnet04DC5B62",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftingress3Subnet2Subnet04DC5B62": {
+      "Properties": {
+        "AvailabilityZone": "dummy1b",
+        "CidrBlock": "172.16.7.0/24",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-ingress-3",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Public",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-3Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftingress3Subnet3DefaultRoute7565C62A": {
+      "DependsOn": [
+        "RedShiftVPCVPCGWC74B7A5F",
+      ],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "RedShiftVPCIGW4D96D21C",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress3Subnet3RouteTable7B83CB52",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftingress3Subnet3RouteTable7B83CB52": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-3Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftingress3Subnet3RouteTableAssociationED24283A": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftingress3Subnet3RouteTable7B83CB52",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftingress3Subnet3SubnetA9A7930C",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftingress3Subnet3SubnetA9A7930C": {
+      "Properties": {
+        "AvailabilityZone": "dummy1c",
+        "CidrBlock": "172.16.8.0/24",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-ingress-3",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Public",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-ingress-3Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftselfmanaged1Subnet1DefaultRoute34439D7A": {
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet1NatInstance45B895CF",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet1RouteTable5AA2BC55",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftselfmanaged1Subnet1RouteTable5AA2BC55": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-1Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftselfmanaged1Subnet1RouteTableAssociationD4A55EEB": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet1RouteTable5AA2BC55",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet1Subnet1090EC75",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftselfmanaged1Subnet1Subnet1090EC75": {
+      "Properties": {
+        "AvailabilityZone": "dummy1a",
+        "CidrBlock": "172.16.9.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-selfmanaged-1",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Private",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-1Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftselfmanaged1Subnet2DefaultRouteA55536D8": {
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet2NatInstance5B22371F",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet2RouteTable045F2C6E",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftselfmanaged1Subnet2RouteTable045F2C6E": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-1Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftselfmanaged1Subnet2RouteTableAssociation5DAF1CE7": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet2RouteTable045F2C6E",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet2SubnetFAD45A29",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftselfmanaged1Subnet2SubnetFAD45A29": {
+      "Properties": {
+        "AvailabilityZone": "dummy1b",
+        "CidrBlock": "172.16.10.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-selfmanaged-1",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Private",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-1Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftselfmanaged1Subnet3DefaultRoute22772A82": {
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet1NatInstance45B895CF",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet3RouteTable7A016007",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftselfmanaged1Subnet3RouteTable7A016007": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-1Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftselfmanaged1Subnet3RouteTableAssociationA9AB2F6A": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet3RouteTable7A016007",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet3SubnetE56739AC",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftselfmanaged1Subnet3SubnetE56739AC": {
+      "Properties": {
+        "AvailabilityZone": "dummy1c",
+        "CidrBlock": "172.16.11.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-selfmanaged-1",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Private",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-1Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftselfmanaged2Subnet1DefaultRouteFE7ABE5B": {
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet1NatInstance45B895CF",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet1RouteTableD2BD1C96",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftselfmanaged2Subnet1RouteTableAssociation8DFF7503": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet1RouteTableD2BD1C96",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet1Subnet8367FE65",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftselfmanaged2Subnet1RouteTableD2BD1C96": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-2Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftselfmanaged2Subnet1Subnet8367FE65": {
+      "Properties": {
+        "AvailabilityZone": "dummy1a",
+        "CidrBlock": "172.16.12.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-selfmanaged-2",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Private",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-2Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftselfmanaged2Subnet2DefaultRouteBAAA59B7": {
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet2NatInstance5B22371F",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet2RouteTable7E602E17",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftselfmanaged2Subnet2RouteTable7E602E17": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-2Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftselfmanaged2Subnet2RouteTableAssociation9529709D": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet2RouteTable7E602E17",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet2Subnet48BF2225",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftselfmanaged2Subnet2Subnet48BF2225": {
+      "Properties": {
+        "AvailabilityZone": "dummy1b",
+        "CidrBlock": "172.16.13.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-selfmanaged-2",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Private",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-2Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftselfmanaged2Subnet3DefaultRoute0AC7093A": {
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet2NatInstance5B22371F",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet3RouteTableF5B240A1",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftselfmanaged2Subnet3RouteTableAssociationD0CE0E8B": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet3RouteTableF5B240A1",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet3SubnetD1C12232",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftselfmanaged2Subnet3RouteTableF5B240A1": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-2Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftselfmanaged2Subnet3SubnetD1C12232": {
+      "Properties": {
+        "AvailabilityZone": "dummy1c",
+        "CidrBlock": "172.16.14.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-selfmanaged-2",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Private",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-2Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftselfmanaged3Subnet1DefaultRouteFC4C3522": {
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet1NatInstance45B895CF",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet1RouteTable936EDF86",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftselfmanaged3Subnet1RouteTable936EDF86": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-3Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftselfmanaged3Subnet1RouteTableAssociationB3B20C93": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet1RouteTable936EDF86",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet1Subnet7071C74A",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftselfmanaged3Subnet1Subnet7071C74A": {
+      "Properties": {
+        "AvailabilityZone": "dummy1a",
+        "CidrBlock": "172.16.15.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-selfmanaged-3",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Private",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-3Subnet1",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftselfmanaged3Subnet2DefaultRoute007F0723": {
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet2NatInstance5B22371F",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet2RouteTable14FCE43E",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftselfmanaged3Subnet2RouteTable14FCE43E": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-3Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftselfmanaged3Subnet2RouteTableAssociation06DA0A4E": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet2RouteTable14FCE43E",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet2Subnet7CF8D6EA",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftselfmanaged3Subnet2Subnet7CF8D6EA": {
+      "Properties": {
+        "AvailabilityZone": "dummy1b",
+        "CidrBlock": "172.16.16.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-selfmanaged-3",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Private",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-3Subnet2",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCRedShiftselfmanaged3Subnet3DefaultRoute9548210E": {
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "RedShiftVPCRedShiftingress1Subnet1NatInstance45B895CF",
+        },
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet3RouteTable3991DBFF",
+        },
+      },
+      "Type": "AWS::EC2::Route",
+    },
+    "RedShiftVPCRedShiftselfmanaged3Subnet3RouteTable3991DBFF": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-3Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::RouteTable",
+    },
+    "RedShiftVPCRedShiftselfmanaged3Subnet3RouteTableAssociationCEEBCD20": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet3RouteTable3991DBFF",
+        },
+        "SubnetId": {
+          "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet3Subnet73792C69",
+        },
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+    },
+    "RedShiftVPCRedShiftselfmanaged3Subnet3Subnet73792C69": {
+      "Properties": {
+        "AvailabilityZone": "dummy1c",
+        "CidrBlock": "172.16.17.0/24",
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "aws-cdk:subnet-name",
+            "Value": "RedShift-selfmanaged-3",
+          },
+          {
+            "Key": "aws-cdk:subnet-type",
+            "Value": "Private",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "Name",
+            "Value": "serverless/RedShift-VPC/RedShift-selfmanaged-3Subnet3",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::Subnet",
+    },
+    "RedShiftVPCSystemsManagerEndpoint6538305C": {
+      "Properties": {
+        "PrivateDnsEnabled": true,
+        "SecurityGroupIds": [
+          {
+            "Fn::GetAtt": [
+              "EC2SGE6C4E25D",
+              "GroupId",
+            ],
+          },
+        ],
+        "ServiceName": "com.amazonaws.us-east-2.ssm",
+        "SubnetIds": [
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet1Subnet1090EC75",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet2SubnetFAD45A29",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet3SubnetE56739AC",
+          },
+        ],
+        "VpcEndpointType": "Interface",
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::VPCEndpoint",
+    },
+    "RedShiftVPCVPCGWC74B7A5F": {
+      "Properties": {
+        "InternetGatewayId": {
+          "Ref": "RedShiftVPCIGW4D96D21C",
+        },
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+    },
+    "RedShiftVPCs3GatewayEndpointBC37D7F7": {
+      "Properties": {
+        "RouteTableIds": [
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged1Subnet1RouteTable5B2D23C9",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged1Subnet2RouteTable0AFCB566",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged1Subnet3RouteTable239A66EC",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged2Subnet1RouteTable074E500D",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged2Subnet2RouteTable7AEDEC13",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged2Subnet3RouteTable70FC3896",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged3Subnet1RouteTable07404042",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged3Subnet2RouteTableA8089759",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftawsmanaged3Subnet3RouteTable169A1F18",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet1RouteTable5AA2BC55",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet2RouteTable045F2C6E",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet3RouteTable7A016007",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet1RouteTableD2BD1C96",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet2RouteTable7E602E17",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet3RouteTableF5B240A1",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet1RouteTable936EDF86",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet2RouteTable14FCE43E",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet3RouteTable3991DBFF",
+          },
+        ],
+        "ServiceName": {
+          "Fn::Join": [
+            "",
+            [
+              "com.amazonaws.",
+              {
+                "Ref": "AWS::Region",
+              },
+              ".s3",
+            ],
+          ],
+        },
+        "VpcEndpointType": "Gateway",
+        "VpcId": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::EC2::VPCEndpoint",
+    },
+    "RedshiftServerlssDataBucketAutoDeleteObjectsCustomResource28F0D0F4": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "RedshiftServerlssDataBucketPolicyAD9C6DCA",
+      ],
+      "Properties": {
+        "BucketName": {
+          "Ref": "RedshiftServerlssDataBucketFB84D1EA",
+        },
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "Custom::S3AutoDeleteObjects",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "RedshiftServerlssDataBucketFB84D1EA": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "BucketName": "redshift-796072252262-us-east-2-redshift-serverless-data",
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": 30,
+              },
+              "ExpirationInDays": 365,
+              "Status": "Enabled",
+              "Transitions": [
+                {
+                  "StorageClass": "STANDARD_IA",
+                  "TransitionInDays": 30,
+                },
+                {
+                  "StorageClass": "INTELLIGENT_TIERING",
+                  "TransitionInDays": 60,
+                },
+                {
+                  "StorageClass": "GLACIER",
+                  "TransitionInDays": 90,
+                },
+                {
+                  "StorageClass": "DEEP_ARCHIVE",
+                  "TransitionInDays": 180,
+                },
+              ],
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "Tags": [
+          {
+            "Key": "aws-cdk:auto-delete-objects",
+            "Value": "true",
+          },
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "RedshiftServerlssDataBucketNotifications6CA688DD": {
+      "Properties": {
+        "BucketName": {
+          "Ref": "RedshiftServerlssDataBucketFB84D1EA",
+        },
+        "Managed": true,
+        "NotificationConfiguration": {
+          "EventBridgeConfiguration": {},
+        },
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "Custom::S3BucketNotifications",
+    },
+    "RedshiftServerlssDataBucketPolicyAD9C6DCA": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "RedshiftServerlssDataBucketFB84D1EA",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+              ],
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::GetAtt": [
+                    "CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092",
+                    "Arn",
+                  ],
+                },
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "RedshiftServerlssDataBucketFB84D1EA",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "RedshiftServerlssDataBucketFB84D1EA",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
+    "createsolutionLoggroup4D9C501A": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/RedShift/dev/",
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "ec2sgssmparamAF4B2433": {
+      "Properties": {
+        "AllowedPattern": ".*",
+        "Description": "param for RedShift ec2 security group id",
+        "Name": "/RedShift/dev/ec2SgId",
+        "Tags": {
+          "costcenter": "tnc",
+          "environment": "dev",
+          "solution": "RedShift",
+        },
+        "Tier": "Intelligent-Tiering",
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "EC2SGE6C4E25D",
+            "GroupId",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "loggroupnamessmparam0614AC68": {
+      "Properties": {
+        "AllowedPattern": ".*",
+        "Description": "param for RedShift log group name",
+        "Name": "/RedShift/dev/logGroupName",
+        "Tags": {
+          "costcenter": "tnc",
+          "environment": "dev",
+          "solution": "RedShift",
+        },
+        "Tier": "Intelligent-Tiering",
+        "Type": "String",
+        "Value": {
+          "Ref": "createsolutionLoggroup4D9C501A",
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "redShiftServerlessRoleDefaultPolicyFCE6A2B4": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "RedshiftServerlssDataBucketFB84D1EA",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "RedshiftServerlssDataBucketFB84D1EA",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "redShiftServerlessRoleDefaultPolicyFCE6A2B4",
+        "Roles": [
+          {
+            "Ref": "redShiftServerlessRoleE3578E08",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "redShiftServerlessRoleE3578E08": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "redshift.amazonaws.com",
+              },
+            },
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "sagemaker.amazonaws.com",
+              },
+            },
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com",
+              },
+            },
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "scheduler.redshift.amazonaws.com",
+              },
+            },
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":iam::796072252262:root",
+                    ],
+                  ],
+                },
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "Grants permission to redshift serverless.",
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/AmazonS3FullAccess",
+              ],
+            ],
+          },
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/AWSGlueConsoleFullAccess",
+              ],
+            ],
+          },
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/AmazonRedshiftFullAccess",
+              ],
+            ],
+          },
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/AmazonSageMakerFullAccess",
+              ],
+            ],
+          },
+        ],
+        "RoleName": "RedShift-redShiftRole-serverless-dev",
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "serverlessWorkgroup": {
+      "Properties": {
+        "NamespaceName": "demoworkspaces",
+        "SubnetIds": [
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet1Subnet1090EC75",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet2SubnetFAD45A29",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged1Subnet3SubnetE56739AC",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet1Subnet8367FE65",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet2Subnet48BF2225",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged2Subnet3SubnetD1C12232",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet1Subnet7071C74A",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet2Subnet7CF8D6EA",
+          },
+          {
+            "Ref": "RedShiftVPCRedShiftselfmanaged3Subnet3Subnet73792C69",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "costcenter",
+            "Value": "tnc",
+          },
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "solution",
+            "Value": "RedShift",
+          },
+        ],
+        "WorkgroupName": "rssworkshop",
+      },
+      "Type": "AWS::RedshiftServerless::Workgroup",
+    },
+    "vpcidssmparamA5E028CC": {
+      "Properties": {
+        "AllowedPattern": ".*",
+        "Description": "param for RedShift vpcid",
+        "Name": "/RedShift/dev/vpcId",
+        "Tags": {
+          "costcenter": "tnc",
+          "environment": "dev",
+          "solution": "RedShift",
+        },
+        "Tier": "Intelligent-Tiering",
+        "Type": "String",
+        "Value": {
+          "Ref": "RedShiftVPC1B63FBB2",
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;

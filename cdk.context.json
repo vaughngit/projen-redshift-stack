@@ -1,0 +1,38 @@
+{
+  "availability-zones:account=796072252262:region=us-east-2": [
+    "us-east-2a",
+    "us-east-2b",
+    "us-east-2c"
+  ],
+  "ami:account=796072252262:filters.image-type.0=machine:filters.name.0=amzn-ami-vpc-nat-*:filters.state.0=available:owners.0=amazon:region=us-east-2": "ami-068fdff5c36def0f1",
+  "endpoint-service-availability-zones:account=796072252262:region=us-east-2:serviceName=com.amazonaws.us-east-2.ssm": [
+    "us-east-2a",
+    "us-east-2b",
+    "us-east-2c"
+  ],
+  "endpoint-service-availability-zones:account=796072252262:region=us-east-2:serviceName=com.amazonaws.us-east-2.monitoring": [
+    "us-east-2a",
+    "us-east-2b",
+    "us-east-2c"
+  ],
+  "endpoint-service-availability-zones:account=796072252262:region=us-east-2:serviceName=com.amazonaws.us-east-2.events": [
+    "us-east-2a",
+    "us-east-2b",
+    "us-east-2c"
+  ],
+  "endpoint-service-availability-zones:account=796072252262:region=us-east-2:serviceName=com.amazonaws.us-east-2.logs": [
+    "us-east-2a",
+    "us-east-2b",
+    "us-east-2c"
+  ],
+  "endpoint-service-availability-zones:account=796072252262:region=us-east-2:serviceName=com.amazonaws.us-east-2.ecr.dkr": [
+    "us-east-2a",
+    "us-east-2b",
+    "us-east-2c"
+  ],
+  "endpoint-service-availability-zones:account=796072252262:region=us-east-2:serviceName=com.amazonaws.us-east-2.elasticfilesystem": [
+    "us-east-2a",
+    "us-east-2b",
+    "us-east-2c"
+  ]
+}
