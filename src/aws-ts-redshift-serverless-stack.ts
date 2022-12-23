@@ -1,6 +1,5 @@
 //import {Stack, Tags, StackProps, CfnOutput,  Duration, RemovalPolicy,  custom_resources as cr, CustomResource} from 'aws-cdk-lib';
-import { Stack, Tags, StackProps, CfnOutput, Duration, RemovalPolicy } from 'aws-cdk-lib';
-import { aws_ssm as ssm } from 'aws-cdk-lib';
+import { Stack, Tags, StackProps, CfnOutput, Duration, RemovalPolicy, aws_ssm as ssm } from 'aws-cdk-lib';
 import { SubnetType } from 'aws-cdk-lib/aws-ec2';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';

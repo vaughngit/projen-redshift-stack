@@ -12,7 +12,7 @@ const desc = 'Redshift Demo Stack';
 
 // for development, use account/region from cdk cli
 const devEnv = {
-  account: '796072252262' || process.env.CDK_DEFAULT_ACCOUNT,
+  account: '123456789876' || process.env.CDK_DEFAULT_ACCOUNT,
   region: aws_region || process.env.CDK_DEFAULT_REGION, //process.env.CDK_DEFAULT_REGION,
 };
 

@@ -2,7 +2,7 @@ const { awscdk } = require('projen');
 const project = new awscdk.AwsCdkTypeScriptApp({
   cdkVersion: '2.56.0',
   defaultReleaseBranch: 'main',
-  docgen: true,
+  // docgen: true,
   license: 'Apache-2.0',
   name: 'projen-redshift-stack',
   deps: ['@aws-cdk/aws-redshift-alpha'], /* Runtime dependencies of this module. */

@@ -291,7 +291,7 @@ def submit_response(event: dict, context, response_status: str, error_message: s
       ],
       "Properties": {
         "Code": {
-          "S3Bucket": "cdk-hnb659fds-assets-796072252262-us-east-2",
+          "S3Bucket": "cdk-hnb659fds-assets-123456789876-us-east-2",
           "S3Key": "3f51abb709b8e65167a45aeed02bab11540603d909005d7148230ba5ce6c74d7.zip",
         },
         "Description": {
@@ -3368,7 +3368,7 @@ def submit_response(event: dict, context, response_status: str, error_message: s
     "RedshiftServerlssDataBucketFB84D1EA": {
       "DeletionPolicy": "Delete",
       "Properties": {
-        "BucketName": "redshift-796072252262-us-east-2-redshift-serverless-data",
+        "BucketName": "redshift-123456789876-us-east-2-redshift-serverless-data",
         "LifecycleConfiguration": {
           "Rules": [
             {
@@ -3647,7 +3647,7 @@ def submit_response(event: dict, context, response_status: str, error_message: s
                       {
                         "Ref": "AWS::Partition",
                       },
-                      ":iam::796072252262:root",
+                      ":iam::123456789876:root",
                     ],
                   ],
                 },
